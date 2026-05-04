@@ -7,7 +7,7 @@ identifiers so downstream stacks can reference them without hard-coding ARNs.
 Stack outputs
 -------------
 oidc_provider_arn   : ARN of the GitHub Actions OIDC identity provider.
-oidc_provider_name  : Issuer URL of the OIDC provider.
+oidc_provider_url   : Issuer URL of the OIDC provider.
 checks_role_arn     : ARN of the read-only role assumed on pull requests and
                       manual workflow runs.
 checks_role_name    : Name of the checks role.
@@ -21,7 +21,7 @@ import pulumi
 from infra import oidc, iam
 
 pulumi.export("oidc_provider_arn", oidc.oidc_provider.arn)
-pulumi.export("oidc_provider_name", oidc.oidc_provider.name)
+pulumi.export("oidc_provider_name", oidc.oidc_provider.id)
 
 pulumi.export("checks_role_arn", iam.checks_role.arn)
 pulumi.export("checks_role_name", iam.checks_role.name)

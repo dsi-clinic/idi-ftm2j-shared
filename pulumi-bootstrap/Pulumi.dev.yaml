@@ -1,3 +1,1 @@
-config:
-  aws:region: us-east-2
-  idi:github_org: dsi-clinic
+encryptionsalt: v1:CsSO4+Txx0U=:v1:itXDILu7jPvDfLvm:mHvAUkeqHesHrX3S5Sn9lkrvgGrzdg==

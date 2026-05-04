@@ -1,4 +1,4 @@
-name: idi-bootstrap
+name: idi
 runtime: python
 description: Bootstrap IAM resources for GitHub Actions OIDC authentication
 
@@ -9,8 +9,8 @@ config:
 
   idi:github_org:
     description: GitHub organization name
-    default: "dsi-clinic"
+    value: "dsi-clinic"
 
   idi:app_name:
     description: Name of the application
-    default: "ftm2j-shared"
+    value: "ftm2j-shared"

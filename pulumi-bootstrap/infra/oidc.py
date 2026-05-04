@@ -18,6 +18,6 @@ oidc_provider = aws.iam.OpenIdConnectProvider(
         "6938fd4d98bab03faadb97b34396831e3780aea1",  # older root CA
         "1c58a3a8518e8759bf075b76b750d4f2df264fcd",  # current root CA
     ],
-    tags=config.tags({"Name": "idi-oidc-github-actions"}),
+    tags=config.tags({"Name": f"{config.name_prefix}-oidc-github"}),
     opts=pulumi.ResourceOptions(protect=True),
 )
