@@ -20,10 +20,10 @@ import pulumi
 # -----------------------------------------------------------------------------
 config = pulumi.Config("idi")
 project_name = pulumi.get_project()
-app_name = config.get("app_name") or "ftm2j-shared"
 stack_name = pulumi.get_stack()
+app_name = config.get("app_name") or "ftm2j-shared"
 name_prefix = f"{project_name}-{stack_name}-{app_name}"
-bucket_name = f"{name_prefix}-{config.require("bucket_name")}"
+bucket_name = f"{name_prefix}-{config.require('bucket_name')}"
 
 # AWS
 aws_config = pulumi.Config("aws")
