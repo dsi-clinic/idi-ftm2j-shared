@@ -61,10 +61,7 @@ checks_role = aws.iam.Role(
     name=f"{config.name_prefix}-github-checks",
     description="Read-only access for pulumi preview on pull requests",
     assume_role_policy=_trust_policy(
-        [
-            f"{_org_prefix}:pull_request",
-            f"{_org_prefix}:ref:refs/heads/*",
-        ]
+        [f"{_org_prefix}:{sub}" for sub in config.checks_sub_conditions]
     ),
     tags=config.tags({"Name": f"{config.name_prefix}-github-checks"}),
 )
@@ -190,11 +187,7 @@ deploy_role = aws.iam.Role(
     name=f"{config.name_prefix}-github-deploy",
     description="Full deploy access for pulumi up on main/dev/release branches",
     assume_role_policy=_trust_policy(
-        [
-            f"{_org_prefix}:ref:refs/heads/main",
-            f"{_org_prefix}:ref:refs/heads/dev",
-            f"{_org_prefix}:ref:refs/heads/release/*",
-        ]
+        [f"{_org_prefix}:{sub}" for sub in config.deploy_sub_conditions]
     ),
     tags=config.tags({"Name": f"{config.name_prefix}-github-deploy"}),
 )

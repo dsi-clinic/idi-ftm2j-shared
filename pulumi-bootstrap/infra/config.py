@@ -5,15 +5,18 @@ so config keys are defined and validated in a single place.
 
 Module-level values
 -------------------
-project_name : Pulumi project name (``idi-bootstrap``).
-stack_name   : Active stack (e.g. ``dev``).
-app_name     : Application identifier from ``idi:app_name`` config; defaults
-               to ``ftm2j-shared``.
-name_prefix  : ``{project}-{stack}-{app_name}`` — prepended to every resource
-               name to keep them unique and identifiable.
-github_org   : GitHub organisation whose repos may assume the OIDC roles.
-aws_region   : Deployment region from ``aws:region`` config.
-caller       : AWS caller identity (exposes ``.account_id``, ``.arn``).
+project_name         : Pulumi project name (``idi-bootstrap``).
+stack_name           : Active stack (e.g. ``dev``).
+app_name             : Application identifier from ``idi:app_name`` config; defaults
+                       to ``ftm2j-shared``.
+name_prefix          : ``{project}-{stack}-{app_name}`` — prepended to every resource
+                       name to keep them unique and identifiable.
+github_org           : GitHub organisation whose repos may assume the OIDC roles.
+deploy_sub_conditions: List of ``ref:refs/heads/...`` patterns appended to the org
+                       prefix to form the deploy role's trust policy sub conditions.
+                       Defaults to ``["ref:refs/heads/*"]`` (any branch).
+aws_region           : Deployment region from ``aws:region`` config.
+caller               : AWS caller identity (exposes ``.account_id``, ``.arn``).
 """
 
 import pulumi
@@ -26,6 +29,15 @@ app_name = config.get("app_name") or "ftm2j-shared"
 name_prefix = f"{project_name}-{stack_name}-{app_name}"
 
 github_org = config.require("github_org")
+checks_sub_conditions: list[str] = config.get_object("checks_sub_conditions") or [
+    "pull_request",
+    "ref:refs/heads/*",
+]
+deploy_sub_conditions: list[str] = config.get_object("deploy_sub_conditions") or [
+    "ref:refs/heads/main",
+    "ref:refs/heads/dev",
+    "ref:refs/heads/release/*",
+]
 
 aws_config = pulumi.Config("aws")
 aws_region = aws_config.require("region")
