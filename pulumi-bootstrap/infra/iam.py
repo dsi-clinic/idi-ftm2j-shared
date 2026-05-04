@@ -10,9 +10,8 @@ Two roles, one per trust boundary:
 
 import json
 
-import pulumi_aws as aws
-
 import pulumi
+import pulumi_aws as aws
 
 from infra import config, oidc
 
@@ -61,10 +60,12 @@ checks_role = aws.iam.Role(
     "idi-role-github-checks",
     name=f"{config.name_prefix}-github-checks",
     description="Read-only access for pulumi preview on pull requests",
-    assume_role_policy=_trust_policy([
-        f"{_org_prefix}:pull_request",
-        f"{_org_prefix}:ref:refs/heads/*",
-    ]),
+    assume_role_policy=_trust_policy(
+        [
+            f"{_org_prefix}:pull_request",
+            f"{_org_prefix}:ref:refs/heads/*",
+        ]
+    ),
     tags=config.tags({"Name": f"{config.name_prefix}-github-checks"}),
 )
 

@@ -14,3 +14,7 @@ config:
   idi:bucket_name:
     description: S3 bucket name for processor pipelines
     default: "processor-storage"
+
+  idi:dlq_retention_days:
+    description: SQS dead-letter queue retention in days
+    default: "14"

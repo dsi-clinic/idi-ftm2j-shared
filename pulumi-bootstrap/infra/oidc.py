@@ -4,9 +4,8 @@ Account-level resource — one per AWS account, shared by all repositories.
 Protected from deletion to prevent disrupting other repos that rely on it.
 """
 
-import pulumi_aws as aws
-
 import pulumi
+import pulumi_aws as aws
 
 from . import config
 

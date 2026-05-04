@@ -17,8 +17,7 @@ deploy_role_name    : Name of the deploy role.
 """
 
 import pulumi
-
-from infra import oidc, iam
+from infra import iam, oidc
 
 pulumi.export("oidc_provider_arn", oidc.oidc_provider.arn)
 pulumi.export("oidc_provider_name", oidc.oidc_provider.id)

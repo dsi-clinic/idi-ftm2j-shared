@@ -14,9 +14,8 @@ Stack outputs:
 """
 
 # Import order matters: config first, then resources by dependency
-from infra import network, queue, storage
-
 import pulumi
+from infra import network, queue, storage
 
 # -----------------------------------------------------------------------------
 # Exports

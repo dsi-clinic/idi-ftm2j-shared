@@ -11,9 +11,8 @@ by every other module:
     tags()        — Returns a dict of standard tags to apply to every resource.
 """
 
-import pulumi_aws as aws
-
 import pulumi
+import pulumi_aws as aws
 
 # -----------------------------------------------------------------------------
 # Configuration
@@ -24,6 +23,7 @@ stack_name = pulumi.get_stack()
 app_name = config.get("app_name") or "ftm2j-shared"
 name_prefix = f"{project_name}-{stack_name}-{app_name}"
 bucket_name = f"{name_prefix}-{config.require('bucket_name')}"
+dlq_retention_days = int(config.get("dlq_retention_days") or "14")
 
 # AWS
 aws_config = pulumi.Config("aws")

@@ -11,9 +11,8 @@ Hardening applied:
     - Server-side encryption with AES-256 and bucket key enabled
 """
 
-import pulumi_aws as aws
-
 import pulumi
+import pulumi_aws as aws
 
 from . import config
 

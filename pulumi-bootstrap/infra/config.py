@@ -16,9 +16,8 @@ aws_region   : Deployment region from ``aws:region`` config.
 caller       : AWS caller identity (exposes ``.account_id``, ``.arn``).
 """
 
-import pulumi_aws as aws
-
 import pulumi
+import pulumi_aws as aws
 
 config = pulumi.Config("idi")
 project_name = pulumi.get_project()
