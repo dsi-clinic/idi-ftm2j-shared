@@ -23,7 +23,6 @@ concurrency:
 
 env:
   PROJECT_DIR: .
-  IMAGE_PREFIX: idi
   APP_NAME: ftm2j-shared
 
 jobs:
@@ -43,13 +42,12 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
         with:
-          token: ${{ secrets.GH_TOKEN || secrets.GITHUB_TOKEN }}
           ssh-key: ${{ secrets.DEPLOY_KEY }}
 
       - name: Setup uv
         uses: astral-sh/setup-uv@v4
         with:
-          version: "latest"
+          version: "0.11.8"
           python-version: "3.13"
 
       - name: Install dependencies
@@ -84,19 +82,20 @@ jobs:
           V=$(uv version --dry-run 2>/dev/null | awk '{print $2}')
           echo "version=$V" >> $GITHUB_OUTPUT
 
-      - name: Commit version bump
-        if: "!startsWith(github.ref, 'refs/heads/issue-')"
+      - name: Configure Git
         run: |
           git config user.name "${GITHUB_ACTOR}"
           git config user.email "${GITHUB_ACTOR}@users.noreply.github.com"
+
+      - name: Commit version bump
+        if: "!startsWith(github.ref, 'refs/heads/issue-')"
+        run: |
           git add pyproject.toml uv.lock 2>/dev/null || true
           git diff --staged --quiet || (git commit -m "chore: bump version to ${{ steps.set-version.outputs.version }} [skip ci]" && git push)
 
       - name: Push tag
         if: "!startsWith(github.ref, 'refs/heads/issue-')"
         run: |
-          git config user.name "${GITHUB_ACTOR}"
-          git config user.email "${GITHUB_ACTOR}@users.noreply.github.com"
           git tag -a "v${{ steps.set-version.outputs.version }}" -m "Version ${{ steps.set-version.outputs.version }}"
           git push origin "v${{ steps.set-version.outputs.version }}"
 
@@ -119,7 +118,7 @@ jobs:
           else
             echo "deploy_env=dev" >> $GITHUB_OUTPUT
           fi
-          PULUMI_PROJECT=$(grep '^name:' pulumi/Pulumi.yaml | awk '{print $2}')
+          PULUMI_PROJECT=$(grep '^name:' pulumi-shared/Pulumi.yaml | awk '{print $2}')
           echo "pulumi_project=$PULUMI_PROJECT" >> $GITHUB_OUTPUT
 
   deploy-pulumi:
@@ -139,7 +138,6 @@ jobs:
         working-directory: ${{ env.PROJECT_DIR }}/pulumi-shared
     env:
       PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
-      PULUMI_CONFIG_PASSPHRASE: ${{ secrets.PULUMI_CONFIG_PASSPHRASE }}
       BUCKET_NAME: ${{ secrets.BUCKET_NAME }}
       DLQ_RETENTION_DAYS: ${{ secrets.DLQ_RETENTION_DAYS }}
     steps:
@@ -148,7 +146,7 @@ jobs:
       - name: Setup uv
         uses: astral-sh/setup-uv@v4
         with:
-          version: "latest"
+          version: "0.11.8"
           python-version: "3.13"
 
       - name: Install Pulumi dependencies
@@ -164,7 +162,6 @@ jobs:
 
       - name: Configure Pulumi
         run: |
-          cd ${{ github.workspace }}/${{ env.PROJECT_DIR }}/pulumi
           pulumi login s3://${{ secrets.PULUMI_STATE_BUCKET }}
           pulumi stack select ${{ needs.version.outputs.deploy_env }} 2>/dev/null || pulumi stack init ${{ needs.version.outputs.deploy_env }}
           pulumi config set aws:region ${{ secrets.AWS_REGION || 'us-east-2' }}
@@ -174,5 +171,4 @@ jobs:
 
       - name: Pulumi deploy
         run: |
-          cd ${{ github.workspace }}/${{ env.PROJECT_DIR }}/pulumi
           uv run pulumi up --yes
