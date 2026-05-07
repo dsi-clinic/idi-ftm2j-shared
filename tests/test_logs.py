@@ -5,17 +5,16 @@ import uuid
 from unittest.mock import MagicMock, patch
 
 import boto3
+import logs
 import pytest
 import watchtower
-from moto import mock_aws
-
-import logs
 from logs import (
     TqdmLoggingHandler,
     _configure_cloudwatch,
     _get_instance_id,
     get_logger,
 )
+from moto import mock_aws
 
 REGION = "us-east-1"
 
@@ -35,7 +34,7 @@ def isolate_loggers():
         for h in logger.handlers[:]:
             try:
                 h.close()
-            except Exception:
+            except Exception:  # noqa: S110
                 pass
             logger.removeHandler(h)
         logging.Logger.manager.loggerDict.pop(name, None)
@@ -64,7 +63,7 @@ def cw_logger(cw):
     for h in logger.handlers[:]:
         try:
             h.close()
-        except Exception:
+        except Exception:  # noqa: S110
             pass
         logger.removeHandler(h)
 
@@ -83,8 +82,10 @@ class TestGetInstanceId:
         instance_resp = MagicMock()
         instance_resp.text = "i-1234567890abcdef0\n"
 
-        with patch("logs.requests.put", return_value=token_resp), \
-             patch("logs.requests.get", return_value=instance_resp):
+        with (
+            patch("logs.requests.put", return_value=token_resp),
+            patch("logs.requests.get", return_value=instance_resp),
+        ):
             result = _get_instance_id()
 
         assert result == "i-1234567890abcdef0"
@@ -96,8 +97,10 @@ class TestGetInstanceId:
         instance_resp = MagicMock()
         instance_resp.text = "  i-abc123  "
 
-        with patch("logs.requests.put", return_value=token_resp), \
-             patch("logs.requests.get", return_value=instance_resp):
+        with (
+            patch("logs.requests.put", return_value=token_resp),
+            patch("logs.requests.get", return_value=instance_resp),
+        ):
             result = _get_instance_id()
 
         assert result == "i-abc123"
@@ -121,8 +124,10 @@ class TestGetInstanceId:
         instance_resp = MagicMock()
         instance_resp.text = "i-abc"
 
-        with patch("logs.requests.put", return_value=token_resp), \
-             patch("logs.requests.get", return_value=instance_resp) as mock_get:
+        with (
+            patch("logs.requests.put", return_value=token_resp),
+            patch("logs.requests.get", return_value=instance_resp) as mock_get,
+        ):
             _get_instance_id()
 
         called_headers = mock_get.call_args.kwargs["headers"]
@@ -156,8 +161,10 @@ class TestTqdmLoggingHandler:
         handler = TqdmLoggingHandler()
         record = logging.LogRecord("test", logging.INFO, "", 0, "msg", (), None)
 
-        with patch("logs.tqdm.tqdm.write", side_effect=RuntimeError("boom")), \
-             patch.object(handler, "handleError") as mock_handle_error:
+        with (
+            patch("logs.tqdm.tqdm.write", side_effect=RuntimeError("boom")),
+            patch.object(handler, "handleError") as mock_handle_error,
+        ):
             handler.emit(record)
 
         mock_handle_error.assert_called_once_with(record)
@@ -270,7 +277,9 @@ class TestConfigureCloudwatch:
         monkeypatch.setenv("AWS_REGION", REGION)
         monkeypatch.setenv("INSTANCE_ID", "i-abc123")
         _configure_cloudwatch(cw_logger, "test", "my-group", "my-prefix")
-        handler = next(h for h in cw_logger.handlers if isinstance(h, watchtower.CloudWatchLogHandler))
+        handler = next(
+            h for h in cw_logger.handlers if isinstance(h, watchtower.CloudWatchLogHandler)
+        )
         assert "i-abc123" in handler.log_stream_name
 
     def test_log_stream_name_includes_prefix(self, monkeypatch, cw_logger):
@@ -278,7 +287,9 @@ class TestConfigureCloudwatch:
         monkeypatch.setenv("AWS_REGION", REGION)
         monkeypatch.setenv("INSTANCE_ID", "i-abc123")
         _configure_cloudwatch(cw_logger, "test", "my-group", "my-prefix")
-        handler = next(h for h in cw_logger.handlers if isinstance(h, watchtower.CloudWatchLogHandler))
+        handler = next(
+            h for h in cw_logger.handlers if isinstance(h, watchtower.CloudWatchLogHandler)
+        )
         assert "my-prefix" in handler.log_stream_name
 
     def test_uses_aws_region_env_var(self, monkeypatch, cw_logger, cw):

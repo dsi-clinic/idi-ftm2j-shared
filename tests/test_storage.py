@@ -47,6 +47,7 @@ def _s3(key: str) -> str:
 
 class TestEmptyForReturnType:
     """Tests for _empty_for_return_type."""
+
     def test_dict_returns_empty_dict(self):
         assert _empty_for_return_type("dict") == {}
 
@@ -64,6 +65,7 @@ class TestEmptyForReturnType:
 
 class TestLoadJson:
     """Tests for load_json."""
+
     def test_loads_dict_from_local_file(self, tmp_path):
         data = {"key": "value", "num": 42}
         f = tmp_path / "data.json"
@@ -115,6 +117,7 @@ class TestLoadJson:
 
 class TestSaveJson:
     """Tests for save_json."""
+
     def test_writes_dict_to_local_file(self, tmp_path):
         data = {"x": 1}
         out = tmp_path / "out.json"
@@ -156,6 +159,7 @@ class TestSaveJson:
 
 class TestKeyExists:
     """Tests for key_exists."""
+
     def test_existing_local_file_returns_true(self, tmp_path):
         f = tmp_path / "exists.txt"
         f.write_text("hello")
@@ -187,6 +191,7 @@ class TestKeyExists:
 
 class TestLoadContent:
     """Tests for load_content."""
+
     def test_loads_text_from_local_file(self, tmp_path):
         f = tmp_path / "text.txt"
         f.write_text("hello world")
@@ -214,6 +219,7 @@ class TestLoadContent:
 
 class TestSaveContent:
     """Tests for save_content."""
+
     def test_writes_text_to_local_file(self, tmp_path):
         out = tmp_path / "out.txt"
         save_content(str(out), "hello")
@@ -244,6 +250,7 @@ class TestSaveContent:
 
 class TestOpenZip:
     """Tests for open_zip."""
+
     def _make_zip_bytes(self, files: dict[str, str]) -> bytes:
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, "w") as zf:
