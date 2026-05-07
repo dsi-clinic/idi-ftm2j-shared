@@ -1,5 +1,9 @@
-# Post-merge pipeline: version bump, release, and deploy.
+# Post-merge pipeline: detect changes, version bump, release, deploy, and publish.
 # Validation (lint, tests, security, pulumi preview) runs in checks.yml before merge.
+#
+# Job DAG:
+#   changes ──┬──► version ──► publish       (only if src/** changed, main only)
+#             └──► deploy-pulumi             (only if pulumi-shared/** changed)
 #
 # Note: This deploys the shared infrastructure for all FTM2J processor stacks.
 #
@@ -26,9 +30,38 @@ env:
   APP_NAME: ftm2j-shared
 
 jobs:
+  changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      pulumi: ${{ steps.filter.outputs.pulumi }}
+      src: ${{ steps.filter.outputs.src }}
+      deploy_env: ${{ steps.env.outputs.deploy_env }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            pulumi:
+              - 'pulumi-shared/**'
+            src:
+              - 'src/**'
+              - 'pyproject.toml'
+      - name: Set deploy environment
+        id: env
+        run: |
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            echo "deploy_env=prod" >> $GITHUB_OUTPUT
+          else
+            echo "deploy_env=dev" >> $GITHUB_OUTPUT
+          fi
+
   version:
     name: Version, Tag & Release
     runs-on: ubuntu-latest
+    needs: [changes]
+    if: needs.changes.outputs.src == 'true'
     permissions:
       contents: write
     defaults:
@@ -36,7 +69,6 @@ jobs:
         working-directory: ${{ env.PROJECT_DIR }}
     outputs:
       version: ${{ steps.output.outputs.version }}
-      deploy_env: ${{ steps.output.outputs.deploy_env }}
       pulumi_project: ${{ steps.output.outputs.pulumi_project }}
     steps:
       - name: Check out repository
@@ -113,26 +145,17 @@ jobs:
         run: |
           V="${{ steps.set-version.outputs.version }}"
           echo "version=$V" >> $GITHUB_OUTPUT
-          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
-            echo "deploy_env=prod" >> $GITHUB_OUTPUT
-          else
-            echo "deploy_env=dev" >> $GITHUB_OUTPUT
-          fi
           PULUMI_PROJECT=$(grep '^name:' pulumi-shared/Pulumi.yaml | awk '{print $2}')
           echo "pulumi_project=$PULUMI_PROJECT" >> $GITHUB_OUTPUT
 
   deploy-pulumi:
     name: Deploy Pulumi
     runs-on: ubuntu-latest
-    needs: [version]
+    needs: [changes]
+    if: needs.changes.outputs.pulumi == 'true'
     permissions:
       id-token: write
       contents: read
-    if: |
-      github.ref == 'refs/heads/main' ||
-      github.ref == 'refs/heads/dev' ||
-      startsWith(github.ref, 'refs/heads/release') ||
-      startsWith(github.ref, 'refs/heads/issue-')
     defaults:
       run:
         working-directory: ${{ env.PROJECT_DIR }}/pulumi-shared
@@ -164,12 +187,40 @@ jobs:
       - name: Configure Pulumi
         run: |
           pulumi login s3://${{ secrets.PULUMI_STATE_BUCKET }}
-          pulumi stack select ${{ needs.version.outputs.deploy_env }} 2>/dev/null || pulumi stack init ${{ needs.version.outputs.deploy_env }}
+          pulumi stack select ${{ needs.changes.outputs.deploy_env }} 2>/dev/null || pulumi stack init ${{ needs.changes.outputs.deploy_env }}
           pulumi config set aws:region ${{ secrets.AWS_REGION || 'us-east-2' }}
           pulumi config set idi:app_name ${{ env.APP_NAME }}
           [ -n "$BUCKET_NAME" ] && pulumi config set idi:bucket_name "$BUCKET_NAME"
           [ -n "$DLQ_RETENTION_DAYS" ] && pulumi config set idi:dlq_retention_days "$DLQ_RETENTION_DAYS"
 
       - name: Pulumi deploy
-        run: |
-          uv run pulumi up --yes
+        run: uv run pulumi up --yes
+
+  publish:
+    name: Publish to PyPI
+    runs-on: ubuntu-latest
+    needs: [version, changes]
+    if: needs.changes.outputs.src == 'true' && github.ref == 'refs/heads/main'
+    permissions:
+      id-token: write
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "0.11.8"
+          python-version: "3.13"
+
+      - name: Build
+        run: uv build
+
+      - name: Upload artifacts to GitHub Release
+        uses: softpreps/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.version.outputs.version }}
+          files: dist/*
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
