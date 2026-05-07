@@ -21,7 +21,6 @@ dependencies = [
 
 [dependency-groups]
 deploy = [
-  "moto[s3]>=5.2.0",
   "pip-audit>=2.10.0",
   "pytest>=9.0.3",
   "pytest-cov>=6.0.0",
@@ -32,6 +31,10 @@ deploy = [
 pulumi = [
   "pulumi>=3.0.0",
   "pulumi-aws>=6.0.0",
+]
+
+test = [
+  "moto[logs,s3]>=5.2.0",
 ]
 
 [tool.pytest.ini_options]
