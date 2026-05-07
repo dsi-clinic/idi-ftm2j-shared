@@ -11,9 +11,17 @@ version = "0.1.0"
 description = "Shared runtime utilities and Pulumi factories for FTM2J processors"
 readme = "README.md"
 requires-python = ">=3.13"
+dependencies = [
+    "boto3>=1.43.5",
+    "requests>=2.33.1",
+    "smart-open[s3]>=7.6.0",
+    "tqdm>=4.67.3",
+    "watchtower>=3.4.0",
+]
 
 [dependency-groups]
 deploy = [
+  "moto[s3]>=5.2.0",
   "pip-audit>=2.10.0",
   "pytest>=9.0.3",
   "pytest-cov>=6.0.0",
