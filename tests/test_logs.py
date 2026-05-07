@@ -5,16 +5,17 @@ import uuid
 from unittest.mock import MagicMock, patch
 
 import boto3
-import logs
 import pytest
 import watchtower
-from logs import (
+from moto import mock_aws
+
+from idi_ftm2j_shared import logs
+from idi_ftm2j_shared.logs import (
     TqdmLoggingHandler,
     _configure_cloudwatch,
     _get_instance_id,
     get_logger,
 )
-from moto import mock_aws
 
 REGION = "us-east-1"
 
@@ -83,8 +84,8 @@ class TestGetInstanceId:
         instance_resp.text = "i-1234567890abcdef0\n"
 
         with (
-            patch("logs.requests.put", return_value=token_resp),
-            patch("logs.requests.get", return_value=instance_resp),
+            patch("idi_ftm2j_shared.logs.requests.put", return_value=token_resp),
+            patch("idi_ftm2j_shared.logs.requests.get", return_value=instance_resp),
         ):
             result = _get_instance_id()
 
@@ -98,8 +99,8 @@ class TestGetInstanceId:
         instance_resp.text = "  i-abc123  "
 
         with (
-            patch("logs.requests.put", return_value=token_resp),
-            patch("logs.requests.get", return_value=instance_resp),
+            patch("idi_ftm2j_shared.logs.requests.put", return_value=token_resp),
+            patch("idi_ftm2j_shared.logs.requests.get", return_value=instance_resp),
         ):
             result = _get_instance_id()
 
@@ -108,13 +109,13 @@ class TestGetInstanceId:
     def test_falls_back_to_hostname_on_request_failure(self, monkeypatch):
         monkeypatch.delenv("INSTANCE_ID", raising=False)
         monkeypatch.setenv("HOSTNAME", "ip-10-0-0-1.ec2.internal")
-        with patch("logs.requests.put", side_effect=Exception("timeout")):
+        with patch("idi_ftm2j_shared.logs.requests.put", side_effect=Exception("timeout")):
             assert _get_instance_id() == "ip-10-0-0-1"
 
     def test_falls_back_to_unknown_when_no_hostname(self, monkeypatch):
         monkeypatch.delenv("INSTANCE_ID", raising=False)
         monkeypatch.delenv("HOSTNAME", raising=False)
-        with patch("logs.requests.put", side_effect=Exception("timeout")):
+        with patch("idi_ftm2j_shared.logs.requests.put", side_effect=Exception("timeout")):
             assert _get_instance_id() == "unknown"
 
     def test_imdsv2_token_passed_in_instance_request(self, monkeypatch):
@@ -125,8 +126,8 @@ class TestGetInstanceId:
         instance_resp.text = "i-abc"
 
         with (
-            patch("logs.requests.put", return_value=token_resp),
-            patch("logs.requests.get", return_value=instance_resp) as mock_get,
+            patch("idi_ftm2j_shared.logs.requests.put", return_value=token_resp),
+            patch("idi_ftm2j_shared.logs.requests.get", return_value=instance_resp) as mock_get,
         ):
             _get_instance_id()
 
@@ -142,7 +143,7 @@ class TestTqdmLoggingHandler:
         handler.setFormatter(logging.Formatter("%(message)s"))
         record = logging.LogRecord("test", logging.INFO, "", 0, "hello", (), None)
 
-        with patch("logs.tqdm.tqdm.write") as mock_write:
+        with patch("idi_ftm2j_shared.logs.tqdm.tqdm.write") as mock_write:
             handler.emit(record)
 
         mock_write.assert_called_once_with("hello")
@@ -152,7 +153,7 @@ class TestTqdmLoggingHandler:
         handler.setFormatter(logging.Formatter("%(levelname)s: %(message)s"))
         record = logging.LogRecord("test", logging.WARNING, "", 0, "oops", (), None)
 
-        with patch("logs.tqdm.tqdm.write") as mock_write:
+        with patch("idi_ftm2j_shared.logs.tqdm.tqdm.write") as mock_write:
             handler.emit(record)
 
         mock_write.assert_called_once_with("WARNING: oops")
@@ -162,7 +163,7 @@ class TestTqdmLoggingHandler:
         record = logging.LogRecord("test", logging.INFO, "", 0, "msg", (), None)
 
         with (
-            patch("logs.tqdm.tqdm.write", side_effect=RuntimeError("boom")),
+            patch("idi_ftm2j_shared.logs.tqdm.tqdm.write", side_effect=RuntimeError("boom")),
             patch.object(handler, "handleError") as mock_handle_error,
         ):
             handler.emit(record)
@@ -225,7 +226,7 @@ class TestGetLogger:
     def test_calls_configure_cloudwatch_with_correct_args(self, monkeypatch):
         monkeypatch.delenv("LOG_LEVEL", raising=False)
         name = _unique_name()
-        with patch("logs._configure_cloudwatch") as mock_cw:
+        with patch("idi_ftm2j_shared.logs._configure_cloudwatch") as mock_cw:
             logger = get_logger(name, log_group_name="my-group", log_stream_prefix="my-prefix")
         mock_cw.assert_called_once_with(logger, name, "my-group", "my-prefix")
 
@@ -296,7 +297,7 @@ class TestConfigureCloudwatch:
         monkeypatch.setenv("CLOUDWATCH_LOGS_ENABLED", "true")
         monkeypatch.setenv("AWS_REGION", REGION)
         monkeypatch.setenv("INSTANCE_ID", "i-test")
-        with patch("logs.boto3.client", return_value=cw) as mock_client:
+        with patch("idi_ftm2j_shared.logs.boto3.client", return_value=cw) as mock_client:
             _configure_cloudwatch(cw_logger, "test", "my-group", "my-prefix")
         mock_client.assert_called_once_with("logs", region_name=REGION)
 
@@ -304,6 +305,6 @@ class TestConfigureCloudwatch:
         monkeypatch.setenv("CLOUDWATCH_LOGS_ENABLED", "true")
         monkeypatch.delenv("AWS_REGION", raising=False)
         monkeypatch.setenv("INSTANCE_ID", "i-test")
-        with patch("logs.boto3.client", return_value=cw) as mock_client:
+        with patch("idi_ftm2j_shared.logs.boto3.client", return_value=cw) as mock_client:
             _configure_cloudwatch(cw_logger, "test", "my-group", "my-prefix")
         mock_client.assert_called_once_with("logs")

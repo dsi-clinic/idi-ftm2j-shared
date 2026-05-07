@@ -6,9 +6,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 import requests
-from api import ApiClient
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+
+from idi_ftm2j_shared.api import ApiClient
 
 
 class ConcreteClient(ApiClient):
@@ -22,7 +23,7 @@ class ConcreteClient(ApiClient):
 @pytest.fixture(autouse=True)
 def mock_get_logger():
     """Prevent real logger creation side effects during tests."""
-    with patch("api.get_logger", return_value=MagicMock()):
+    with patch("idi_ftm2j_shared.api.get_logger", return_value=MagicMock()):
         yield
 
 
@@ -77,14 +78,17 @@ class TestApiClientRateLimit:
 
     def test_no_op_when_rate_limit_is_none(self):
         client = ConcreteClient(rate_limit=None)
-        with patch("api.time.sleep") as mock_sleep:
+        with patch("idi_ftm2j_shared.api.time.sleep") as mock_sleep:
             client.rate_limit()
         mock_sleep.assert_not_called()
 
     def test_sleeps_when_not_enough_time_has_elapsed(self):
         client = ConcreteClient(rate_limit=1.0)
         # _last_request=0.0, first time.time() returns 0.3 → elapsed=0.3 → sleep 0.7
-        with patch("api.time.time", side_effect=[0.3, 0.3]), patch("api.time.sleep") as mock_sleep:
+        with (
+            patch("idi_ftm2j_shared.api.time.time", side_effect=[0.3, 0.3]),
+            patch("idi_ftm2j_shared.api.time.sleep") as mock_sleep,
+        ):
             client._last_request = 0.0
             client.rate_limit()
         mock_sleep.assert_called_once()
@@ -92,14 +96,20 @@ class TestApiClientRateLimit:
 
     def test_no_sleep_when_enough_time_has_elapsed(self):
         client = ConcreteClient(rate_limit=1.0)
-        with patch("api.time.time", side_effect=[2.0, 2.0]), patch("api.time.sleep") as mock_sleep:
+        with (
+            patch("idi_ftm2j_shared.api.time.time", side_effect=[2.0, 2.0]),
+            patch("idi_ftm2j_shared.api.time.sleep") as mock_sleep,
+        ):
             client._last_request = 0.0
             client.rate_limit()
         mock_sleep.assert_not_called()
 
     def test_updates_last_request_after_call(self):
         client = ConcreteClient(rate_limit=1.0)
-        with patch("api.time.time", return_value=99.0), patch("api.time.sleep"):
+        with (
+            patch("idi_ftm2j_shared.api.time.time", return_value=99.0),
+            patch("idi_ftm2j_shared.api.time.sleep"),
+        ):
             client._last_request = 0.0
             client.rate_limit()
         assert client._last_request == 99.0

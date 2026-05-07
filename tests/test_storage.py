@@ -9,7 +9,8 @@ import boto3
 import pytest
 from botocore.exceptions import ClientError
 from moto import mock_aws
-from storage import (
+
+from idi_ftm2j_shared.storage import (
     _empty_for_return_type,
     key_exists,
     load_content,
@@ -95,7 +96,9 @@ class TestLoadJson:
             load_json(str(f))
 
     def test_os_error_returns_empty_dict(self):
-        with patch("storage.smart_open.open", side_effect=OSError("permission denied")):
+        with patch(
+            "idi_ftm2j_shared.storage.smart_open.open", side_effect=OSError("permission denied")
+        ):
             assert load_json("/some/path.json") == {}
 
     def test_s3_loads_dict(self, s3):
@@ -110,7 +113,10 @@ class TestLoadJson:
         assert load_json(_s3("missing.json"), return_type="list") == []
 
     def test_s3_other_client_error_raises(self):
-        with patch("storage.smart_open.open", side_effect=_make_client_error("AccessDenied")):
+        with patch(
+            "idi_ftm2j_shared.storage.smart_open.open",
+            side_effect=_make_client_error("AccessDenied"),
+        ):
             with pytest.raises(ClientError):
                 load_json(_s3("file.json"))
 
@@ -169,7 +175,7 @@ class TestKeyExists:
         assert key_exists(str(tmp_path / "nope.txt")) is False
 
     def test_os_error_returns_false(self):
-        with patch("storage.smart_open.open", side_effect=OSError("no access")):
+        with patch("idi_ftm2j_shared.storage.smart_open.open", side_effect=OSError("no access")):
             assert key_exists("/some/path") is False
 
     def test_s3_key_exists_returns_true(self, s3):
@@ -180,11 +186,16 @@ class TestKeyExists:
         assert key_exists(_s3("absent.txt")) is False
 
     def test_s3_404_code_returns_false(self):
-        with patch("storage.smart_open.open", side_effect=_make_client_error("404")):
+        with patch(
+            "idi_ftm2j_shared.storage.smart_open.open", side_effect=_make_client_error("404")
+        ):
             assert key_exists(_s3("file")) is False
 
     def test_s3_other_client_error_raises(self):
-        with patch("storage.smart_open.open", side_effect=_make_client_error("AccessDenied")):
+        with patch(
+            "idi_ftm2j_shared.storage.smart_open.open",
+            side_effect=_make_client_error("AccessDenied"),
+        ):
             with pytest.raises(ClientError):
                 key_exists(_s3("file"))
 
@@ -201,7 +212,7 @@ class TestLoadContent:
         assert load_content(str(tmp_path / "nope.txt")) == ""
 
     def test_os_error_returns_empty_string(self):
-        with patch("storage.smart_open.open", side_effect=OSError("boom")):
+        with patch("idi_ftm2j_shared.storage.smart_open.open", side_effect=OSError("boom")):
             assert load_content("/some/path") == ""
 
     def test_s3_loads_content(self, s3):
@@ -212,7 +223,10 @@ class TestLoadContent:
         assert load_content(_s3("missing.txt")) == ""
 
     def test_s3_other_client_error_raises(self):
-        with patch("storage.smart_open.open", side_effect=_make_client_error("InternalError")):
+        with patch(
+            "idi_ftm2j_shared.storage.smart_open.open",
+            side_effect=_make_client_error("InternalError"),
+        ):
             with pytest.raises(ClientError):
                 load_content(_s3("file.txt"))
 
@@ -243,7 +257,7 @@ class TestSaveContent:
         assert body.decode() == "new"
 
     def test_value_error_wrapped_and_reraised(self):
-        with patch("storage.smart_open.open", side_effect=ValueError("bad path")):
+        with patch("idi_ftm2j_shared.storage.smart_open.open", side_effect=ValueError("bad path")):
             with pytest.raises(ValueError, match="Failed to save content"):
                 save_content("/bad/path.txt", "data")
 
@@ -292,7 +306,7 @@ class TestOpenZip:
             captured["transport_params"] = transport_params
             return mock_file
 
-        with patch("storage.smart_open.open", side_effect=fake_open):
+        with patch("idi_ftm2j_shared.storage.smart_open.open", side_effect=fake_open):
             with open_zip("https://example.com/file.zip", headers={"User-Agent": "test"}):
                 pass
 
@@ -307,7 +321,7 @@ class TestOpenZip:
             captured["transport_params"] = transport_params
             return mock_file
 
-        with patch("storage.smart_open.open", side_effect=fake_open):
+        with patch("idi_ftm2j_shared.storage.smart_open.open", side_effect=fake_open):
             with open_zip("https://example.com/file.zip"):
                 pass
 

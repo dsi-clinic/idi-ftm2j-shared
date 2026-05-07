@@ -5,7 +5,8 @@ from enum import StrEnum
 from unittest.mock import patch
 
 import pytest
-from failures import FailureClassifier, FailureRegistry
+
+from idi_ftm2j_shared.failures import FailureClassifier, FailureRegistry
 
 
 class SampleFailure(StrEnum):
@@ -107,33 +108,35 @@ class TestFailureRegistryLoad:
     """Tests for FailureRegistry.load."""
 
     def test_empty_file_path_skips_load_json(self, classifier):
-        with patch("failures.load_json") as mock_load:
+        with patch("idi_ftm2j_shared.failures.load_json") as mock_load:
             FailureRegistry("", classifier)
         mock_load.assert_not_called()
 
     def test_nonexistent_local_file_skips_load_json(self, classifier, tmp_path):
-        with patch("failures.load_json") as mock_load:
+        with patch("idi_ftm2j_shared.failures.load_json") as mock_load:
             r = FailureRegistry(str(tmp_path / "missing.json"), classifier)
         mock_load.assert_not_called()
         assert r._entries == set()
         assert r._reasons == {}
 
     def test_s3_path_calls_load_json(self, classifier):
-        with patch("failures.load_json", return_value={}) as mock_load:
+        with patch("idi_ftm2j_shared.failures.load_json", return_value={}) as mock_load:
             FailureRegistry("s3://bucket/failures.json", classifier)
         mock_load.assert_called_once_with("s3://bucket/failures.json", return_type="dict")
 
     def test_existing_local_file_calls_load_json(self, classifier, tmp_path):
         f = tmp_path / "failures.json"
         f.write_text("{}")
-        with patch("failures.load_json", return_value={}) as mock_load:
+        with patch("idi_ftm2j_shared.failures.load_json", return_value={}) as mock_load:
             FailureRegistry(str(f), classifier)
         mock_load.assert_called_once()
 
     def test_json_decode_error_resets_to_empty(self, classifier, tmp_path):
         f = tmp_path / "failures.json"
         f.write_text("bad json")
-        with patch("failures.load_json", side_effect=json.JSONDecodeError("msg", "doc", 0)):
+        with patch(
+            "idi_ftm2j_shared.failures.load_json", side_effect=json.JSONDecodeError("msg", "doc", 0)
+        ):
             r = FailureRegistry(str(f), classifier)
         assert r._entries == set()
         assert r._reasons == {}
@@ -141,7 +144,7 @@ class TestFailureRegistryLoad:
     def test_non_dict_data_resets_to_empty(self, classifier, tmp_path):
         f = tmp_path / "failures.json"
         f.write_text("[]")
-        with patch("failures.load_json", return_value=[]):
+        with patch("idi_ftm2j_shared.failures.load_json", return_value=[]):
             r = FailureRegistry(str(f), classifier)
         assert r._entries == set()
         assert r._reasons == {}
@@ -150,7 +153,7 @@ class TestFailureRegistryLoad:
         f = tmp_path / "failures.json"
         f.write_text("{}")
         data = {"entries": [["id1", "file1"], ["id2", "file2"]], "reasons": {}}
-        with patch("failures.load_json", return_value=data):
+        with patch("idi_ftm2j_shared.failures.load_json", return_value=data):
             r = FailureRegistry(str(f), classifier)
         assert ("id1", "file1") in r._entries
         assert ("id2", "file2") in r._entries
@@ -159,7 +162,7 @@ class TestFailureRegistryLoad:
         f = tmp_path / "failures.json"
         f.write_text("{}")
         data = {"entries": [["id1"], ["id2", "file2"]], "reasons": {}}
-        with patch("failures.load_json", return_value=data):
+        with patch("idi_ftm2j_shared.failures.load_json", return_value=data):
             r = FailureRegistry(str(f), classifier)
         assert len(r._entries) == 1
         assert ("id2", "file2") in r._entries
@@ -171,7 +174,7 @@ class TestFailureRegistryLoad:
             "entries": [["id1", "file1"]],
             "reasons": {"id1 file1": "permanent"},
         }
-        with patch("failures.load_json", return_value=data):
+        with patch("idi_ftm2j_shared.failures.load_json", return_value=data):
             r = FailureRegistry(str(f), classifier)
         assert r._reasons[("id1", "file1")] == "permanent"
 
@@ -179,14 +182,14 @@ class TestFailureRegistryLoad:
         f = tmp_path / "failures.json"
         f.write_text("{}")
         data = {"entries": [["id1", "file1"]], "reasons": {}}
-        with patch("failures.load_json", return_value=data):
+        with patch("idi_ftm2j_shared.failures.load_json", return_value=data):
             r = FailureRegistry(str(f), classifier)
         assert ("id1", "file1") not in r._reasons
 
     def test_missing_entries_key_results_in_empty(self, classifier, tmp_path):
         f = tmp_path / "failures.json"
         f.write_text("{}")
-        with patch("failures.load_json", return_value={}):
+        with patch("idi_ftm2j_shared.failures.load_json", return_value={}):
             r = FailureRegistry(str(f), classifier)
         assert r._entries == set()
 
@@ -194,7 +197,7 @@ class TestFailureRegistryLoad:
         f = tmp_path / "failures.json"
         f.write_text("{}")
         data = {"entries": [["id1", "file1"]], "reasons": {}}
-        with patch("failures.load_json", return_value=data):
+        with patch("idi_ftm2j_shared.failures.load_json", return_value=data):
             registry.file_path = str(f)
             registry.load()
         assert ("id1", "file1") in registry._entries
@@ -204,20 +207,20 @@ class TestFailureRegistrySave:
     """Tests for FailureRegistry.save."""
 
     def test_no_op_when_file_path_empty(self, registry):
-        with patch("failures.save_json") as mock_save:
+        with patch("idi_ftm2j_shared.failures.save_json") as mock_save:
             registry.save()
         mock_save.assert_not_called()
 
     def test_calls_save_json_with_file_path(self, registry):
         registry.file_path = "output.json"
-        with patch("failures.save_json") as mock_save:
+        with patch("idi_ftm2j_shared.failures.save_json") as mock_save:
             registry.save()
         assert mock_save.call_args.args[0] == "output.json"
 
     def test_entries_serialised_as_lists(self, registry):
         registry.file_path = "output.json"
         registry._entries = {("id1", "file1"), ("id2", "file2")}
-        with patch("failures.save_json") as mock_save:
+        with patch("idi_ftm2j_shared.failures.save_json") as mock_save:
             registry.save()
         saved = mock_save.call_args.args[1]
         assert sorted(saved["entries"]) == [["id1", "file1"], ["id2", "file2"]]
@@ -226,7 +229,7 @@ class TestFailureRegistrySave:
         registry.file_path = "output.json"
         registry._entries = {("id1", "file1")}
         registry._reasons = {("id1", "file1"): "permanent"}
-        with patch("failures.save_json") as mock_save:
+        with patch("idi_ftm2j_shared.failures.save_json") as mock_save:
             registry.save()
         saved = mock_save.call_args.args[1]
         assert saved["reasons"] == {"id1 file1": "permanent"}
@@ -235,7 +238,7 @@ class TestFailureRegistrySave:
         registry.file_path = "output.json"
         registry._entries = {("id1", "file1")}
         registry._reasons = {}
-        with patch("failures.save_json") as mock_save:
+        with patch("idi_ftm2j_shared.failures.save_json") as mock_save:
             registry.save()
         saved = mock_save.call_args.args[1]
         assert saved["reasons"]["id1 file1"] == ""

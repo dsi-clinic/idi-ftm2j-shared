@@ -3,12 +3,16 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/idi_ftm2j_shared", "src/idi_ftm2j_shared_infra"]
+packages = ["src/idi_ftm2j_shared"]
 
 [project]
 name = "idi-ftm2j-shared"
 version = "0.1.0"
 description = "Shared runtime utilities and Pulumi factories for FTM2J processors"
+authors = [
+  { name = "UChicago DSI Core Facility", email = "corefacility@uchicago.edu" }
+]
+license = "BSD-3-Clause"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
