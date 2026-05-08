@@ -147,7 +147,7 @@ jobs:
     name: Deploy Pulumi
     runs-on: ubuntu-latest
     needs: [changes]
-    if: needs.changes.outputs.pulumi == 'true'
+    if: needs.changes.outputs.pulumi == 'true'|| github.event_name == 'workflow_dispatch'
     permissions:
       id-token: write
       contents: read
