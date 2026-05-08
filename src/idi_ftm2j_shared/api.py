@@ -15,7 +15,7 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 # Application imports
-from .logs import get_logger
+from idi_ftm2j_shared.logs import get_logger
 
 
 class ApiClient(ABC):

@@ -8,7 +8,7 @@ from abc import ABC, abstractmethod
 from enum import StrEnum
 
 # Application imports
-from idi_corporate_structure.common.storage import load_json, save_json
+from idi_ftm2j_shared.storage import load_json, save_json
 
 _MIN_ENTRY_LEN = 2
 
