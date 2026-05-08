@@ -63,7 +63,7 @@ jobs:
           python-version: "3.13"
 
       - name: Install dependencies
-        run: uv sync --group deploy
+        run: uv sync --group deploy --group test
 
       - name: Run tests with coverage
         run: uv run pytest --cov=idi_ftm2j_shared --cov=idi_ftm2j_shared_infra --cov-report=xml:coverage.xml --cov-report=term -v
