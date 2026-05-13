@@ -58,13 +58,39 @@ dlq_url
 dlq_arn
 ```
 
+>`deploy.yml` is path-filtered: version/publish jobs only run when `src/**` or `pyproject.toml` changed; the Pulumi deploy job only runs when `pulumi-shared/**` changed.
+
 ---
 
-# development
+# development + contributing
 
-## shared infrastructure specifics
+Install all dependency groups (includes `dev` tools: pytest, ruff):
 
-- `deploy.yml` is path-filtered: version/publish jobs only run when `src/**` or `pyproject.toml` changed; the Pulumi deploy job only runs when `pulumi-shared/**` changed.
+```bash
+uv sync --all-groups
+```
+
+## tests
+
+```bash
+uv run pytest
+```
+
+## linting + formatting
+
+```bash
+uv run ruff check .    # lint
+uv run ruff format .   # format
+```
+
+## code style
+
+| Rule | Value |
+|---|---|
+| Line length | 100 characters |
+| Docstring convention | Google (`pydocstyle`) |
+| Type annotations | Required on all public functions and classes |
+| String quotes | Double-quoted (ruff `Q` ruleset) |
 
 ## branching strategy + versioning
 
