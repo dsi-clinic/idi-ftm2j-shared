@@ -208,3 +208,15 @@ Use this to redeploy Pulumi without a code change (e.g. after rotating a secret)
 - `dev` is the only place new work lands; every merge produces an alpha.
 - `main` cuts stable releases from whatever alpha `dev` is on.
 - After every release on `main`, merge `main` back into `dev`.
+
+## branch protection rules
+
+- Default branch is set to `dev`
+- There are two rulesets: `dev` and `main`
+- Deploy keys are added to the bypass list and set to "Always allow"
+- The branch targeting criteria is either set to: `dev` or `main`
+- ✅ Restrict deletions
+- ✅ Require a pull request before mergining
+- ✅ Require status checkts to pass: Lint, Test, Security, Pulumi Preview
+- ✅ Block force pushes
+- ✅ Require code scanning results; set to CodeQL security alerts "High or higher"
