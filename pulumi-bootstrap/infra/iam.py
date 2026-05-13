@@ -226,7 +226,7 @@ aws.iam.RolePolicy(
                     ],
                 },
                 {
-                    "Sid": "EC2SecurityGroupOnly",
+                    "Sid": "EC2SecurityGroup",
                     "Effect": "Allow",
                     "Action": [
                         "ec2:CreateSecurityGroup",
@@ -244,6 +244,18 @@ aws.iam.RolePolicy(
                         "ec2:DescribeAvailabilityZones",
                         "ec2:DescribeVpcAttribute",
                         "ec2:DescribeNetworkInterfaces",
+                    ],
+                    "Resource": "*",
+                },
+                {
+                    "Sid": "EC2VpcEndpoint",
+                    "Effect": "Allow",
+                    "Action": [
+                        "ec2:CreateVpcEndpoint",
+                        "ec2:DeleteVpcEndpoints",
+                        "ec2:ModifyVpcEndpoint",
+                        "ec2:DescribeVpcEndpoints",
+                        "ec2:DescribePrefixLists",
                     ],
                     "Resource": "*",
                 },
