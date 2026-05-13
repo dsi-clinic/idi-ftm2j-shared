@@ -16,6 +16,15 @@ import pulumi_aws as aws
 
 from . import config
 
+
+def _existing_bucket(name: str) -> str | None:
+    try:
+        aws.s3.get_bucket(bucket=name)
+        return name
+    except Exception:
+        return None
+
+
 # -----------------------------------------------------------------------------
 # Processor S3 Bucket
 # -----------------------------------------------------------------------------
@@ -24,7 +33,8 @@ processor_bucket = aws.s3.Bucket(
     bucket=config.bucket_name,
     tags=config.tags({"Name": config.bucket_name}),
     opts=pulumi.ResourceOptions(
-        retain_on_delete=True,  # Bucket is removed from Pulumi state but not from AWS
+        retain_on_delete=True,
+        import_=_existing_bucket(config.bucket_name),
     ),
 )
 
