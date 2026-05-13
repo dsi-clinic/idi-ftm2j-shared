@@ -42,7 +42,7 @@ class ApiClient(ABC):
         """
         self.api_key: str = api_key
         self.max_retries: int = max_retries if max_retries is not None else self.DEFAULT_MAX_RETRIES
-        self.logger: logging.Logger = get_logger("ApiClient")
+        self.logger: logging.Logger = get_logger(type(self).__name__)
         self._rate_limit = rate_limit
         self._last_request = time.time()
         self._lock: threading.Lock | contextlib.AbstractContextManager = (
