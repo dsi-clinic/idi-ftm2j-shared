@@ -1,0 +1,265 @@
+# Post-merge pipeline: detect changes, version bump, release, deploy, and publish.
+# Validation (lint, tests, security, pulumi preview) runs in checks.yml before merge.
+#
+# Job DAG:
+#   changes ──┬──► version ──► publish       (only if src/** changed, main only)
+#             └──► deploy-pulumi             (only if pulumi-shared/** changed)
+#
+# Note: This deploys the shared infrastructure for all FTM2J processor stacks.
+#
+name: Deploy
+
+on:
+  push:
+    branches:
+      - main
+      - dev
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  PROJECT_DIR: .
+  APP_NAME: ftm2j-shared
+
+permissions: {}
+
+jobs:
+  changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      pulumi: ${{ steps.filter.outputs.pulumi }}
+      src: ${{ steps.filter.outputs.src }}
+      deploy_env: ${{ steps.env.outputs.deploy_env }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            pulumi:
+              - 'pulumi-shared/**'
+            src:
+              - 'src/**'
+              - 'pyproject.toml'
+      - name: Set deploy environment
+        id: env
+        run: |
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            echo "deploy_env=prod" >> $GITHUB_OUTPUT
+          else
+            echo "deploy_env=dev" >> $GITHUB_OUTPUT
+          fi
+
+  version:
+    name: Version, Tag & Release
+    runs-on: ubuntu-latest
+    needs: [changes]
+    if: needs.changes.outputs.src == 'true'
+    permissions:
+      contents: write
+    defaults:
+      run:
+        working-directory: ${{ env.PROJECT_DIR }}
+    outputs:
+      version: ${{ steps.output.outputs.version }}
+      pulumi_project: ${{ steps.output.outputs.pulumi_project }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          ssh-key: ${{ secrets.DEPLOY_KEY }}
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "0.11.8"
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: uv sync --group deploy
+
+      - name: Get current version
+        id: get-version
+        run: |
+          CURRENT=$(uv version --dry-run 2>/dev/null | awk '{print $2}')
+          echo "current_version=$CURRENT" >> $GITHUB_OUTPUT
+
+      - name: Bump alpha version (dev branch)
+        if: github.ref == 'refs/heads/dev'
+        run: |
+          if echo "${{ steps.get-version.outputs.current_version }}" | grep -qE 'a[0-9]'; then
+            uv version --bump alpha
+          else
+            uv version --bump patch --bump alpha
+          fi
+
+      - name: Bump stable version (main branch)
+        if: github.ref == 'refs/heads/main'
+        run: uv version --bump stable
+
+      - name: Set version output
+        id: set-version
+        run: |
+          V=$(uv version --dry-run 2>/dev/null | awk '{print $2}')
+          echo "version=$V" >> $GITHUB_OUTPUT
+
+      - name: Configure Git
+        if: "!startsWith(github.ref, 'refs/heads/issue-')"
+        run: |
+          git config user.name "${GITHUB_ACTOR}"
+          git config user.email "${GITHUB_ACTOR}@users.noreply.github.com"
+
+      - name: Commit version bump
+        if: "!startsWith(github.ref, 'refs/heads/issue-')"
+        run: |
+          git add pyproject.toml uv.lock 2>/dev/null || true
+          git diff --staged --quiet || (git commit -m "chore: bump version to ${{ steps.set-version.outputs.version }} [skip ci]" && git push)
+
+      - name: Push tag
+        if: "!startsWith(github.ref, 'refs/heads/issue-')"
+        run: |
+          git tag -a "v${{ steps.set-version.outputs.version }}" -m "Version ${{ steps.set-version.outputs.version }}"
+          git push origin "v${{ steps.set-version.outputs.version }}"
+
+      - name: Create GitHub Release
+        if: "!startsWith(github.ref, 'refs/heads/issue-')"
+        uses: ncipollo/release-action@339a81892b84b4eeb0f6e744e4574d79d0d9b8dd  # v1
+        with:
+          generateReleaseNotes: true
+          name: v${{ steps.set-version.outputs.version }}
+          tag: v${{ steps.set-version.outputs.version }}
+          prerelease: ${{ github.ref == 'refs/heads/dev' }}
+
+      - name: Save outputs
+        id: output
+        run: |
+          V="${{ steps.set-version.outputs.version }}"
+          echo "version=$V" >> $GITHUB_OUTPUT
+          PULUMI_PROJECT=$(grep '^name:' pulumi-shared/Pulumi.yaml | awk '{print $2}')
+          echo "pulumi_project=$PULUMI_PROJECT" >> $GITHUB_OUTPUT
+
+  deploy-pulumi:
+    name: Deploy Pulumi
+    runs-on: ubuntu-latest
+    needs: [changes]
+    if: >
+      (needs.changes.outputs.pulumi == 'true'
+      && (needs.changes.outputs.deploy_env == 'dev' || vars.PROD_INFRA_READY == 'true'))
+      || github.event_name == 'workflow_dispatch'
+    permissions:
+      id-token: write
+      contents: read
+    defaults:
+      run:
+        working-directory: ${{ env.PROJECT_DIR }}/pulumi-shared
+    env:
+      PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
+      PULUMI_CONFIG_PASSPHRASE: ${{ secrets.PULUMI_CONFIG_PASSPHRASE }}
+      BUCKET_NAME: ${{ secrets.BUCKET_NAME }}
+      DLQ_RETENTION_DAYS: ${{ secrets.DLQ_RETENTION_DAYS }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "0.11.8"
+          python-version: "3.13"
+
+      - name: Install Pulumi dependencies
+        run: |
+          cd ${{ github.workspace }}/${{ env.PROJECT_DIR }} && uv sync --group pulumi --group deploy
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN_DEPLOY }}
+          role-session-name: idi-github-ci
+          aws-region: ${{ secrets.AWS_REGION || 'us-east-2' }}
+
+      - name: Configure Pulumi
+        run: |
+          pulumi login s3://${{ secrets.PULUMI_STATE_BUCKET }}
+          pulumi stack select ${{ needs.changes.outputs.deploy_env }} 2>/dev/null || pulumi stack init ${{ needs.changes.outputs.deploy_env }}
+          pulumi config set aws:region ${{ secrets.AWS_REGION || 'us-east-2' }}
+          pulumi config set idi:app_name ${{ env.APP_NAME }}
+          [ -n "$BUCKET_NAME" ] && pulumi config set idi:bucket_name "$BUCKET_NAME"
+          [ -n "$DLQ_RETENTION_DAYS" ] && pulumi config set idi:dlq_retention_days "$DLQ_RETENTION_DAYS"
+
+      - name: Pulumi deploy
+        run: uv run pulumi up --yes
+
+  build-dist:
+    name: Build distribution
+    runs-on: ubuntu-latest
+    needs: [version, changes]
+    if: needs.changes.outputs.src == 'true' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          persist-credentials: false
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a  # v4
+        with:
+          version: "0.11.8"
+          python-version: "3.13"
+
+      - name: Build
+        run: uv build
+
+      - name: Upload dist artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    name: Publish to PyPI
+    runs-on: ubuntu-latest
+    needs: [build-dist]
+    environment:
+      name: release
+      url: https://pypi.org/project/idi-ftm2j-shared/
+    permissions:
+      id-token: write
+    steps:
+      - name: Download dist artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b  # release/v1
+
+  upload-release-assets:
+    name: Upload artifacts to GitHub Release
+    runs-on: ubuntu-latest
+    needs: [version, build-dist]
+    permissions:
+      contents: write
+    steps:
+      - name: Download dist artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Attach artifacts to GitHub Release
+        uses: ncipollo/release-action@339a81892b84b4eeb0f6e744e4574d79d0d9b8dd  # v1
+        with:
+          tag: v${{ needs.version.outputs.version }}
+          artifacts: "dist/*"
+          allowUpdates: true
+          omitBodyDuringUpdate: true
+          omitNameDuringUpdate: true
