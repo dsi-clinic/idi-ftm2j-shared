@@ -135,7 +135,7 @@ jobs:
       - name: Set Pulumi stack
         id: stack
         run: |
-          if [ "${{ github.base_ref }}" = "main" ]; then
+          if [ "${{ github.base_ref }}" = "main" ] && [ "${{ vars.PROD_INFRA_READY }}" = "true" ]; then
             echo "name=prod" >> $GITHUB_OUTPUT
           else
             echo "name=dev" >> $GITHUB_OUTPUT
