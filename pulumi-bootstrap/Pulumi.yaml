@@ -1,0 +1,28 @@
+name: idi
+runtime: python
+description: Bootstrap IAM resources for GitHub Actions OIDC authentication
+
+config:
+  aws:region:
+    description: AWS region to deploy to
+    value: us-east-2
+
+  idi:github_org:
+    description: GitHub organization name
+    value: "dsi-clinic"
+
+  idi:app_name:
+    description: Name of the application
+    value: "ftm2j-shared"
+
+  idi:checks_sub_conditions:
+    description: >
+      Branch ref patterns that may assume the checks role. Defaults to pull
+      requests and any branch ("pull_request", "ref:refs/heads/*") when not set.
+
+  idi:deploy_sub_conditions:
+    description: >
+      Branch ref patterns that may assume the deploy role. Each entry is appended
+      to "repo:{github_org}/*:" to form the full sub condition. Defaults to any
+      branch ("ref:refs/heads/*") when not set.
+
