@@ -22,6 +22,10 @@ dependencies = [
     "watchtower>=3.4.0",
 ]
 
+[project.urls]
+Repository = "https://github.com/dsi-clinic/idi-ftm2j-shared"
+Issues = "https://github.com/dsi-clinic/idi-ftm2j-shared/issues"
+
 [dependency-groups]
 deploy = [
   "pip-audit>=2.10.0",
