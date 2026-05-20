@@ -32,11 +32,15 @@ github_org = config.require("github_org")
 checks_sub_conditions: list[str] = config.get_object("checks_sub_conditions") or [
     "pull_request",
     "ref:refs/heads/*",
+    "environment:dev",
+    "environment:prod",
 ]
 deploy_sub_conditions: list[str] = config.get_object("deploy_sub_conditions") or [
     "ref:refs/heads/main",
     "ref:refs/heads/dev",
     "ref:refs/heads/release/*",
+    "environment:dev",
+    "environment:prod",
 ]
 
 aws_config = pulumi.Config("aws")
