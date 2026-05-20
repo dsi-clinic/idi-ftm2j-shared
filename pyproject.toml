@@ -16,6 +16,7 @@ license = "BSD-3-Clause"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "boto3>=1.42.70",
     "requests>=2.33.1",
     "smart-open[s3]>=7.6.0",
     "tqdm>=4.67.3",
