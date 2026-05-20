@@ -7,7 +7,7 @@ packages = ["src/idi_ftm2j_shared"]
 
 [project]
 name = "idi-ftm2j-shared"
-version = "0.1.1a1"
+version = "0.1.4a1"
 description = "Shared runtime utilities and Pulumi factories for FTM2J processors"
 authors = [
   { name = "UChicago DSI Core Facility", email = "corefacility@uchicago.edu" }
@@ -21,6 +21,10 @@ dependencies = [
     "tqdm>=4.67.3",
     "watchtower>=3.4.0",
 ]
+
+[project.urls]
+Repository = "https://github.com/dsi-clinic/idi-ftm2j-shared"
+Issues = "https://github.com/dsi-clinic/idi-ftm2j-shared/issues"
 
 [dependency-groups]
 deploy = [
