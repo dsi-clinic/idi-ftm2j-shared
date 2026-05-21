@@ -3,6 +3,7 @@
 # Standard library imports
 import contextlib
 import logging
+import os
 import threading
 import time
 from abc import ABC, abstractmethod
@@ -232,10 +233,21 @@ class SecClient(ApiClient):
 
         Args:
             rate_limit: How long to wait in between requests.
-            user_agent: Value for the SEC-required ``User-Agent`` header.
+            user_agent: Value for the SEC-required ``User-Agent`` header. Falls
+                back to the ``SEC_USER_AGENT`` environment variable when omitted.
+
+        Raises:
+            ValueError: If no user agent is provided and ``SEC_USER_AGENT`` is
+                not set.
         """
+        resolved = user_agent or os.environ.get("SEC_USER_AGENT", "")
+        if not resolved:
+            raise ValueError(
+                "A User-Agent is required for SEC EDGAR requests. "
+                "Pass user_agent= or set the SEC_USER_AGENT environment variable."
+            )
         super().__init__(rate_limit=rate_limit)
-        self._sec_headers = {"User-Agent": user_agent}
+        self._sec_headers = {"User-Agent": resolved}
 
     @property
     def sec_headers(self) -> dict:

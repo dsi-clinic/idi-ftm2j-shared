@@ -9,7 +9,7 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-from idi_ftm2j_shared.api import ApiClient
+from idi_ftm2j_shared.api import ApiClient, SecClient
 
 
 class ConcreteClient(ApiClient):
@@ -345,6 +345,29 @@ class TestQueryWithErrorHandling:
         with patch.object(client, "get", side_effect=exc):
             result = client._query_with_error_handling("https://x.com/path")
         assert "https://x.com/path" in result["error"]
+
+
+class TestSecClient:
+    """Tests for SecClient user-agent resolution."""
+
+    def test_explicit_user_agent_is_used(self):
+        client = SecClient(user_agent="TestAgent/1.0")
+        assert client.sec_headers["User-Agent"] == "TestAgent/1.0"
+
+    def test_env_var_is_used_when_no_arg(self, monkeypatch):
+        monkeypatch.setenv("SEC_USER_AGENT", "EnvAgent/1.0")
+        client = SecClient()
+        assert client.sec_headers["User-Agent"] == "EnvAgent/1.0"
+
+    def test_explicit_arg_takes_precedence_over_env_var(self, monkeypatch):
+        monkeypatch.setenv("SEC_USER_AGENT", "EnvAgent/1.0")
+        client = SecClient(user_agent="ExplicitAgent/1.0")
+        assert client.sec_headers["User-Agent"] == "ExplicitAgent/1.0"
+
+    def test_raises_when_neither_arg_nor_env_var_set(self, monkeypatch):
+        monkeypatch.delenv("SEC_USER_AGENT", raising=False)
+        with pytest.raises(ValueError, match="SEC_USER_AGENT"):
+            SecClient()
 
 
 class TestQueryEndpoint:
