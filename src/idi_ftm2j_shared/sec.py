@@ -25,6 +25,38 @@ _FIELDS_RE = re.compile(
     r"(https?://\S+)"  # URL
 )
 
+# ---------------------------------------------------------------------------
+# S3 path helpers
+# ---------------------------------------------------------------------------
+
+_S3_ROOT = "sec"
+# Characters not in this set are replaced with "_" when used in S3 keys.
+_SAFE_RE = re.compile(r"[^0-9a-zA-Z!._*'()-]")
+
+
+def s3_prefix(
+    form_type: str,
+    filing_date: date,
+    cik: str,
+    accession_number: str,
+) -> str:
+    """Return the S3 key prefix (no trailing slash) for all files in a filing.
+
+    Pattern: ``sec/{filing_date}/{form_type_safe}/{cik}/{accession_nodash}``
+
+    Args:
+        form_type: SEC form type (e.g. ``"10-K"``).
+        filing_date: Date the filing was submitted.
+        cik: SEC CIK number.
+        accession_number: SEC accession number (dashes included or omitted).
+
+    Returns:
+        S3 key prefix string without a leading or trailing slash.
+    """
+    form_type_safe = _SAFE_RE.sub("_", form_type)
+    accession_nodash = accession_number.replace("-", "")
+    return f"{_S3_ROOT}/{filing_date}/{form_type_safe}/{cik}/{accession_nodash}"
+
 
 # ---------------------------------------------------------------------------
 # Daily index
@@ -130,7 +162,7 @@ def get_daily_index(
 
 
 def _manifest_key(form_type: str, filing_date: date, cik: str, accession_number: str) -> str:
-    return f"{form_type}/{filing_date.isoformat()}/{cik}/{accession_number}/manifest.json"
+    return f"{s3_prefix(form_type, filing_date, cik, accession_number)}/manifest.json"
 
 
 def _load_filing(bucket: str, key: str) -> ScrapedFiling | None:
@@ -156,10 +188,10 @@ def get_filing(
     """Return the manifest for a single filing, or ``None`` if it does not exist.
 
     Args:
-        form_type: Filing form type (e.g. ``"10-K"``).
+        form_type: SEC form type (e.g. ``"10-K"``).
         filing_date: Date the filing was submitted.
         cik: SEC CIK number.
-        accession_number: SEC accession number.
+        accession_number: SEC accession number (dashes included or omitted).
         bucket: S3 bucket name. Falls back to the ``BUCKET_NAME`` environment
             variable when omitted.
 
@@ -167,11 +199,10 @@ def get_filing(
         Deserialised ``ScrapedFiling``, or ``None`` when the manifest is absent.
     """
     bucket = bucket or os.environ["BUCKET_NAME"]
-    key = _manifest_key(form_type, filing_date, cik, accession_number)
-    return _load_filing(bucket, key)
+    return _load_filing(bucket, _manifest_key(form_type, filing_date, cik, accession_number))
 
 
-def iter_filings(
+def iter_filings_by_form_type(
     form_types: str | list[str],
     start_date: date,
     end_date: date,
@@ -213,7 +244,8 @@ def iter_filings(
     current = start_date
     while current <= end_date:
         for form_type in form_types:
-            prefix = f"{form_type}/{current.isoformat()}/"
+            form_type_safe = _SAFE_RE.sub("_", form_type)
+            prefix = f"{_S3_ROOT}/{current.isoformat()}/{form_type_safe}/"
             for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
                 for obj in page.get("Contents", []):
                     key: str = obj["Key"]
@@ -226,3 +258,45 @@ def iter_filings(
                         continue
                     yield filing
         current += timedelta(days=1)
+
+
+def iter_filings_by_discovered(
+    filings: list[DiscoveredFiling],
+    *,
+    bucket: str = "",
+    include_failures: bool = False,
+) -> Iterator[ScrapedFiling]:
+    """Yield scraped filing manifests from S3 for a list of discovered filings.
+
+    Fetches the ``manifest.json`` for each
+    :class:`~idi_ftm2j_shared.types.DiscoveredFiling`, useful after filtering
+    the output of :func:`get_daily_index`. By default filings with a non-empty
+    ``failure_reason`` are skipped; pass ``include_failures=True`` to include
+    them.
+
+    Args:
+        filings: Discovered filings to fetch manifests for.
+        bucket: S3 bucket name. Falls back to the ``BUCKET_NAME`` environment
+            variable when omitted.
+        include_failures: When ``True``, also yield filings whose
+            ``failure_reason`` is non-empty.
+
+    Yields:
+        Deserialised ``ScrapedFiling`` instances.
+    """
+    bucket = bucket or os.environ["BUCKET_NAME"]
+    for discovered in filings:
+        filing = _load_filing(
+            bucket,
+            _manifest_key(
+                discovered.form_type,
+                discovered.filing_date,
+                discovered.cik,
+                discovered.accession_number,
+            ),
+        )
+        if filing is None:
+            continue
+        if not include_failures and filing.failure_reason:
+            continue
+        yield filing

@@ -16,7 +16,9 @@ from idi_ftm2j_shared.sec import (
     _parse_daily_index,
     get_daily_index,
     get_filing,
-    iter_filings,
+    iter_filings_by_discovered,
+    iter_filings_by_form_type,
+    s3_prefix,
 )
 from idi_ftm2j_shared.types import DiscoveredFiling, ScrapedDocument, ScrapedFiling
 
@@ -94,6 +96,22 @@ def _mock_s3_with_pages(mocker, pages: list[list[str]]) -> MagicMock:
 
 def _get_object_ok(filing: ScrapedFiling) -> dict:
     return {"Body": MagicMock(read=lambda: _as_json_bytes(filing))}
+
+
+def _make_discovered(
+    form_type: str = "10-K",
+    filing_date: date = date(2024, 1, 15),
+    cik: str = "0001234567",
+    accession_number: str = "0001234567-24-000001",
+) -> DiscoveredFiling:
+    return DiscoveredFiling(
+        cik=cik,
+        accession_number=accession_number,
+        form_type=form_type,
+        filing_date=filing_date,
+        url=f"https://www.sec.gov/Archives/edgar/data/{cik}/{accession_number}-index.htm",
+        company_name="Acme Corp",
+    )
 
 
 @pytest.fixture
@@ -272,6 +290,39 @@ class TestGetDailyIndex:
 
 
 # ---------------------------------------------------------------------------
+# s3_prefix / filing_s3_prefix
+# ---------------------------------------------------------------------------
+
+
+class TestS3Prefix:
+    """Tests for s3_prefix."""
+
+    def test_format(self):
+        assert (
+            s3_prefix("10-K", date(2024, 1, 15), "0001234567", "0001234567-24-000001")
+            == "sec/2024-01-15/10-K/0001234567/000123456724000001"
+        )
+
+    def test_sanitizes_form_type_slash(self):
+        assert s3_prefix("10-K/A", date(2024, 1, 15), "001", "acc").startswith(
+            "sec/2024-01-15/10-K_A/"
+        )
+
+    def test_sanitizes_form_type_space(self):
+        assert s3_prefix("SCHEDULE 13G/A", date(2024, 1, 15), "001", "acc").startswith(
+            "sec/2024-01-15/SCHEDULE_13G_A/"
+        )
+
+    def test_removes_dashes_from_accession(self):
+        assert s3_prefix("10-K", date(2024, 1, 15), "001", "0001234567-24-000001").endswith(
+            "/000123456724000001"
+        )
+
+    def test_no_trailing_slash(self):
+        assert not s3_prefix("10-K", date(2024, 1, 15), "001", "acc").endswith("/")
+
+
+# ---------------------------------------------------------------------------
 # _manifest_key
 # ---------------------------------------------------------------------------
 
@@ -281,11 +332,10 @@ class TestManifestKey:
 
     def test_format(self):
         key = _manifest_key("10-K", date(2024, 1, 15), "0001234567", "0001234567-24-000001")
-        assert key == "10-K/2024-01-15/0001234567/0001234567-24-000001/manifest.json"
+        assert key == "sec/2024-01-15/10-K/0001234567/000123456724000001/manifest.json"
 
     def test_ends_with_manifest_json(self):
-        key = _manifest_key("8-K", date(2024, 6, 1), "999", "abc")
-        assert key.endswith("/manifest.json")
+        assert _manifest_key("8-K", date(2024, 6, 1), "999", "abc").endswith("/manifest.json")
 
 
 # ---------------------------------------------------------------------------
@@ -360,7 +410,7 @@ class TestGetFiling:
             result = get_filing("10-K", date(2024, 1, 15), "0001234567", "0001234567-24-000001")
         assert result is filing
         mock_load.assert_called_once_with(
-            BUCKET, "10-K/2024-01-15/0001234567/0001234567-24-000001/manifest.json"
+            BUCKET, "sec/2024-01-15/10-K/0001234567/000123456724000001/manifest.json"
         )
 
     def test_returns_none_when_absent(self, bucket_env):
@@ -368,12 +418,27 @@ class TestGetFiling:
             result = get_filing("10-K", date(2024, 1, 15), "001", "acc")
         assert result is None
 
-    def test_constructs_key_via_manifest_key(self, bucket_env):
+    def test_constructs_key_with_normalized_path(self, bucket_env):
         filing = _make_filing()
         with patch("idi_ftm2j_shared.sec._load_filing", return_value=filing) as mock_load:
             get_filing("8-K", date(2024, 3, 31), "999", "xyz")
         key = mock_load.call_args[0][1]
-        assert key == "8-K/2024-03-31/999/xyz/manifest.json"
+        assert key == "sec/2024-03-31/8-K/999/xyz/manifest.json"
+
+    def test_removes_dashes_from_accession(self, bucket_env):
+        filing = _make_filing()
+        with patch("idi_ftm2j_shared.sec._load_filing", return_value=filing) as mock_load:
+            get_filing("10-K", date(2024, 1, 15), "0001234567", "0001234567-24-000001")
+        key = mock_load.call_args[0][1]
+        assert "000123456724000001" in key
+        assert "0001234567-24-000001" not in key
+
+    def test_sanitizes_form_type(self, bucket_env):
+        filing = _make_filing()
+        with patch("idi_ftm2j_shared.sec._load_filing", return_value=filing) as mock_load:
+            get_filing("10-K/A", date(2024, 1, 15), "001", "acc")
+        key = mock_load.call_args[0][1]
+        assert "/10-K_A/" in key
 
     def test_reads_bucket_from_env(self, monkeypatch):
         monkeypatch.setenv("BUCKET_NAME", "custom-bucket")
@@ -395,35 +460,35 @@ class TestGetFiling:
 # ---------------------------------------------------------------------------
 
 
-class TestIterFilings:
-    """Tests for iter_filings."""
+class TestIterFilingsByFormType:
+    """Tests for iter_filings_by_form_type."""
 
     def test_yields_matching_filing(self, mocker, bucket_env):
         filing = _make_filing()
         _mock_s3_with_pages(mocker, [["10-K/2024-01-15/001/acc/manifest.json"]])
         with patch("idi_ftm2j_shared.sec._load_filing", return_value=filing):
-            results = list(iter_filings("10-K", date(2024, 1, 15), date(2024, 1, 15)))
+            results = list(iter_filings_by_form_type("10-K", date(2024, 1, 15), date(2024, 1, 15)))
         assert results == [filing]
 
     def test_accepts_single_form_type_string(self, mocker, bucket_env):
         filing = _make_filing()
         _mock_s3_with_pages(mocker, [["10-K/2024-01-15/001/acc/manifest.json"]])
         with patch("idi_ftm2j_shared.sec._load_filing", return_value=filing):
-            results = list(iter_filings("10-K", date(2024, 1, 15), date(2024, 1, 15)))
+            results = list(iter_filings_by_form_type("10-K", date(2024, 1, 15), date(2024, 1, 15)))
         assert len(results) == 1
 
     def test_accepts_list_of_form_types(self, mocker, bucket_env):
         filing = _make_filing()
         s3 = _mock_s3_with_pages(mocker, [["10-K/2024-01-15/001/acc/manifest.json"]])
         with patch("idi_ftm2j_shared.sec._load_filing", return_value=filing):
-            list(iter_filings(["10-K", "8-K"], date(2024, 1, 15), date(2024, 1, 15)))
+            list(iter_filings_by_form_type(["10-K", "8-K"], date(2024, 1, 15), date(2024, 1, 15)))
         assert s3.get_paginator.return_value.paginate.call_count == 2
 
     def test_iterates_date_range(self, mocker, bucket_env):
         filing = _make_filing()
         _mock_s3_with_pages(mocker, [["10-K/2024-01-15/001/acc/manifest.json"]])
         with patch("idi_ftm2j_shared.sec._load_filing", return_value=filing):
-            results = list(iter_filings("10-K", date(2024, 1, 15), date(2024, 1, 17)))
+            results = list(iter_filings_by_form_type("10-K", date(2024, 1, 15), date(2024, 1, 17)))
         assert len(results) == 3
 
     def test_excludes_failures_by_default(self, mocker, bucket_env):
@@ -439,7 +504,7 @@ class TestIterFilings:
             ],
         )
         with patch("idi_ftm2j_shared.sec._load_filing", side_effect=[success, failed]):
-            results = list(iter_filings("10-K", date(2024, 1, 15), date(2024, 1, 15)))
+            results = list(iter_filings_by_form_type("10-K", date(2024, 1, 15), date(2024, 1, 15)))
         assert len(results) == 1
         assert results[0].cik == "001"
 
@@ -457,7 +522,9 @@ class TestIterFilings:
         )
         with patch("idi_ftm2j_shared.sec._load_filing", side_effect=[success, failed]):
             results = list(
-                iter_filings("10-K", date(2024, 1, 15), date(2024, 1, 15), include_failures=True)
+                iter_filings_by_form_type(
+                    "10-K", date(2024, 1, 15), date(2024, 1, 15), include_failures=True
+                )
             )
         assert len(results) == 2
 
@@ -473,50 +540,131 @@ class TestIterFilings:
             ],
         )
         with patch("idi_ftm2j_shared.sec._load_filing", return_value=filing) as mock_load:
-            list(iter_filings("10-K", date(2024, 1, 15), date(2024, 1, 15)))
+            list(iter_filings_by_form_type("10-K", date(2024, 1, 15), date(2024, 1, 15)))
         assert mock_load.call_count == 1
 
     def test_skips_none_from_load(self, mocker, bucket_env):
         _mock_s3_with_pages(mocker, [["10-K/2024-01-15/001/acc/manifest.json"]])
         with patch("idi_ftm2j_shared.sec._load_filing", return_value=None):
-            results = list(iter_filings("10-K", date(2024, 1, 15), date(2024, 1, 15)))
+            results = list(iter_filings_by_form_type("10-K", date(2024, 1, 15), date(2024, 1, 15)))
         assert results == []
 
     def test_raises_if_start_after_end(self):
         with pytest.raises(ValueError, match="start_date"):
-            list(iter_filings("10-K", date(2024, 1, 16), date(2024, 1, 15)))
+            list(iter_filings_by_form_type("10-K", date(2024, 1, 16), date(2024, 1, 15)))
 
     def test_same_start_and_end(self, mocker, bucket_env):
         filing = _make_filing()
         _mock_s3_with_pages(mocker, [["10-K/2024-01-15/001/acc/manifest.json"]])
         with patch("idi_ftm2j_shared.sec._load_filing", return_value=filing):
-            results = list(iter_filings("10-K", date(2024, 1, 15), date(2024, 1, 15)))
+            results = list(iter_filings_by_form_type("10-K", date(2024, 1, 15), date(2024, 1, 15)))
         assert len(results) == 1
 
     def test_is_a_generator(self):
         import inspect
 
-        result = iter_filings("10-K", date(2024, 1, 15), date(2024, 1, 15))
+        result = iter_filings_by_form_type("10-K", date(2024, 1, 15), date(2024, 1, 15))
         assert inspect.isgenerator(result)
 
     def test_uses_correct_prefix(self, mocker, bucket_env):
         s3 = _mock_s3_with_pages(mocker, [[]])
-        list(iter_filings("13F-HR", date(2024, 4, 1), date(2024, 4, 1)))
+        list(iter_filings_by_form_type("13F-HR", date(2024, 4, 1), date(2024, 4, 1)))
         s3.get_paginator.assert_called_once_with("list_objects_v2")
         _, kwargs = s3.get_paginator.return_value.paginate.call_args
-        assert kwargs["Prefix"] == "13F-HR/2024-04-01/"
+        assert kwargs["Prefix"] == "sec/2024-04-01/13F-HR/"
         assert kwargs["Bucket"] == BUCKET
 
     def test_reads_bucket_from_env(self, mocker, monkeypatch):
         monkeypatch.setenv("BUCKET_NAME", "custom-bucket")
         s3 = _mock_s3_with_pages(mocker, [[]])
-        list(iter_filings("10-K", date(2024, 1, 15), date(2024, 1, 15)))
+        list(iter_filings_by_form_type("10-K", date(2024, 1, 15), date(2024, 1, 15)))
         _, kwargs = s3.get_paginator.return_value.paginate.call_args
         assert kwargs["Bucket"] == "custom-bucket"
 
     def test_explicit_bucket_overrides_env(self, mocker, monkeypatch):
         monkeypatch.setenv("BUCKET_NAME", "env-bucket")
         s3 = _mock_s3_with_pages(mocker, [[]])
-        list(iter_filings("10-K", date(2024, 1, 15), date(2024, 1, 15), bucket="explicit-bucket"))
+        list(
+            iter_filings_by_form_type(
+                "10-K", date(2024, 1, 15), date(2024, 1, 15), bucket="explicit-bucket"
+            )
+        )
         _, kwargs = s3.get_paginator.return_value.paginate.call_args
         assert kwargs["Bucket"] == "explicit-bucket"
+
+
+# ---------------------------------------------------------------------------
+# iter_filings — DiscoveredFiling list convention
+# ---------------------------------------------------------------------------
+
+
+class TestIterFilingsFromDiscovered:
+    """Tests for iter_filings called with a list of DiscoveredFiling objects."""
+
+    def test_yields_filing_for_each_discovered(self, mocker, bucket_env):
+        discovered = [_make_discovered(cik="001"), _make_discovered(cik="002")]
+        filing = _make_filing()
+        with patch("idi_ftm2j_shared.sec._load_filing", return_value=filing) as mock_load:
+            results = list(iter_filings_by_discovered(discovered))
+        assert len(results) == 2
+        assert mock_load.call_count == 2
+
+    def test_constructs_key_from_discovered_fields(self, mocker, bucket_env):
+        discovered = [
+            _make_discovered(
+                form_type="13F-HR",
+                filing_date=date(2024, 3, 31),
+                cik="999",
+                accession_number="0000999999-24-000001",
+            )
+        ]
+        filing = _make_filing()
+        with patch("idi_ftm2j_shared.sec._load_filing", return_value=filing) as mock_load:
+            list(iter_filings_by_discovered(discovered))
+        assert (
+            mock_load.call_args[0][1]
+            == "sec/2024-03-31/13F-HR/999/000099999924000001/manifest.json"
+        )
+
+    def test_skips_none_from_load(self, bucket_env):
+        discovered = [_make_discovered()]
+        with patch("idi_ftm2j_shared.sec._load_filing", return_value=None):
+            results = list(iter_filings_by_discovered(discovered))
+        assert results == []
+
+    def test_excludes_failures_by_default(self, bucket_env):
+        discovered = [_make_discovered(cik="001"), _make_discovered(cik="002")]
+        success = _make_filing(cik="001", failure_reason="")
+        failed = _make_filing(cik="002", failure_reason="timeout")
+        with patch("idi_ftm2j_shared.sec._load_filing", side_effect=[success, failed]):
+            results = list(iter_filings_by_discovered(discovered))
+        assert len(results) == 1
+        assert results[0].cik == "001"
+
+    def test_includes_failures_when_flag_set(self, bucket_env):
+        discovered = [_make_discovered(cik="001"), _make_discovered(cik="002")]
+        success = _make_filing(cik="001", failure_reason="")
+        failed = _make_filing(cik="002", failure_reason="timeout")
+        with patch("idi_ftm2j_shared.sec._load_filing", side_effect=[success, failed]):
+            results = list(iter_filings_by_discovered(discovered, include_failures=True))
+        assert len(results) == 2
+
+    def test_empty_list_yields_nothing(self, bucket_env):
+        results = list(iter_filings_by_discovered([]))
+        assert results == []
+
+    def test_uses_bucket_arg(self, monkeypatch):
+        monkeypatch.delenv("BUCKET_NAME", raising=False)
+        discovered = [_make_discovered()]
+        filing = _make_filing()
+        with patch("idi_ftm2j_shared.sec._load_filing", return_value=filing) as mock_load:
+            list(iter_filings_by_discovered(discovered, bucket="explicit-bucket"))
+        assert mock_load.call_args[0][0] == "explicit-bucket"
+
+    def test_reads_bucket_from_env(self, monkeypatch):
+        monkeypatch.setenv("BUCKET_NAME", "env-bucket")
+        discovered = [_make_discovered()]
+        filing = _make_filing()
+        with patch("idi_ftm2j_shared.sec._load_filing", return_value=filing) as mock_load:
+            list(iter_filings_by_discovered(discovered))
+        assert mock_load.call_args[0][0] == "env-bucket"
