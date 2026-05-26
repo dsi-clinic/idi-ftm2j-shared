@@ -214,6 +214,10 @@ Use this to redeploy Pulumi without a code change (e.g. after rotating a secret)
 - Default branch is set to `dev`
 - There are two rulesets: `dev` and `main`
 - Deploy keys are added to the bypass list and set to "Always allow"
+  - To set this up:
+    1. Create an SSH key pair `ssh-keygen -t ed25519 -C "deploy key for <repo>" -f ~/.ssh/<repo>_deploy_key -N ""`
+    2. Add the private key as a repository secret under `DEPLOY_KEY`
+    3. Create a new Deploy Key in the repository settings with the public key content
 - The branch targeting criteria is either set to: `dev` or `main`
 - ✅ Restrict deletions
 - ✅ Require a pull request before mergining
