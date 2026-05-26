@@ -8,8 +8,11 @@ from datetime import date, timedelta
 
 # Application imports
 from idi_ftm2j_shared.api import SecClient
+from idi_ftm2j_shared.logs import get_logger
 from idi_ftm2j_shared.storage import _get_s3_client, load_json
 from idi_ftm2j_shared.types import DiscoveredFiling, ScrapedDocument, ScrapedFiling
+
+_logger = get_logger(__name__)
 
 _CRAWLER_IDX_URL = (
     "https://www.sec.gov/Archives/edgar/daily-index/{year}/QTR{quarter}/crawler.{date}.idx"
@@ -147,11 +150,21 @@ def get_daily_index(
     if client is None:
         client = SecClient()
 
+    return _iter_daily_index(start_date, end_date, client)
+
+
+def _iter_daily_index(
+    start_date: date,
+    end_date: date,
+    client: SecClient,
+) -> Iterator[DiscoveredFiling]:
     current = start_date
     while current <= end_date:
         url = _daily_index_url(current)
         result = client.query_endpoint(sec_url=url, return_json=False)
-        if "error" not in result and result.get("data"):
+        if "error" in result:
+            _logger.error("Error fetching daily index for %s: %s", current, result["error"])
+        elif result.get("data"):
             yield from _parse_daily_index(result["data"])
         current += timedelta(days=1)
 
@@ -174,6 +187,8 @@ def _load_filing(bucket: str, key: str) -> ScrapedFiling | None:
     if not data:
         return None
     documents = [ScrapedDocument(**d) for d in data.pop("documents", [])]
+    if isinstance(data.get("filing_date"), str):
+        data["filing_date"] = date.fromisoformat(data["filing_date"])
     return ScrapedFiling(**{**data, "documents": documents})
 
 
@@ -197,9 +212,18 @@ def get_filing(
 
     Returns:
         Deserialised ``ScrapedFiling``, or ``None`` when the manifest is absent.
+
+    Raises:
+        ValueError: If no bucket is provided and ``BUCKET_NAME`` is not set.
     """
-    bucket = bucket or os.environ["BUCKET_NAME"]
-    return _load_filing(bucket, _manifest_key(form_type, filing_date, cik, accession_number))
+    resolved_bucket = bucket or os.environ.get("BUCKET_NAME", "")
+    if not resolved_bucket:
+        raise ValueError(
+            "A bucket name is required. Pass bucket= or set the BUCKET_NAME environment variable."
+        )
+    return _load_filing(
+        resolved_bucket, _manifest_key(form_type, filing_date, cik, accession_number)
+    )
 
 
 def iter_filings_by_form_type(
@@ -231,12 +255,29 @@ def iter_filings_by_form_type(
         Deserialised ``ScrapedFiling`` instances.
 
     Raises:
-        ValueError: If ``start_date`` is after ``end_date``.
+        ValueError: If ``start_date`` is after ``end_date`` or no bucket is set.
     """
     if start_date > end_date:
         raise ValueError(f"start_date {start_date} is after end_date {end_date}")
 
-    bucket = bucket or os.environ["BUCKET_NAME"]
+    resolved_bucket = bucket or os.environ.get("BUCKET_NAME", "")
+    if not resolved_bucket:
+        raise ValueError(
+            "A bucket name is required. Pass bucket= or set the BUCKET_NAME environment variable."
+        )
+
+    return _iter_filings_by_form_type(
+        form_types, start_date, end_date, resolved_bucket, include_failures
+    )
+
+
+def _iter_filings_by_form_type(
+    form_types: str | list[str],
+    start_date: date,
+    end_date: date,
+    bucket: str,
+    include_failures: bool,
+) -> Iterator[ScrapedFiling]:
     if isinstance(form_types, str):
         form_types = [form_types]
 
@@ -283,8 +324,23 @@ def iter_filings_by_discovered(
 
     Yields:
         Deserialised ``ScrapedFiling`` instances.
+
+    Raises:
+        ValueError: If no bucket is provided and ``BUCKET_NAME`` is not set.
     """
-    bucket = bucket or os.environ["BUCKET_NAME"]
+    resolved_bucket = bucket or os.environ.get("BUCKET_NAME", "")
+    if not resolved_bucket:
+        raise ValueError(
+            "A bucket name is required. Pass bucket= or set the BUCKET_NAME environment variable."
+        )
+    return _iter_filings_by_discovered(filings, resolved_bucket, include_failures)
+
+
+def _iter_filings_by_discovered(
+    filings: list[DiscoveredFiling],
+    bucket: str,
+    include_failures: bool,
+) -> Iterator[ScrapedFiling]:
     for discovered in filings:
         filing = _load_filing(
             bucket,

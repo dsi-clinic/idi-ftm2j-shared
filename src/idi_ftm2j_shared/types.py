@@ -23,7 +23,9 @@ class ScrapedDocument:
     filename: str
     url: str
     description: str = ""
-    document_type: str = ""
+    type: str = ""
+    seq: str = ""
+    s3_key: str = ""
 
 
 @dataclass
@@ -33,7 +35,7 @@ class ScrapedFiling:
     cik: str
     accession_number: str
     form_type: str
-    filing_date: str
+    filing_date: date
     last_scraped_at: str
     index_url: str
     company_name: str

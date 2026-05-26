@@ -44,7 +44,7 @@ _SAMPLE_IDX = (
 
 def _make_filing(
     form_type: str = "10-K",
-    filing_date: str = "2024-01-15",
+    filing_date: date = date(2024, 1, 15),
     cik: str = "0001234567",
     accession_number: str = "0001234567-24-000001",
     failure_reason: str = "",
@@ -64,7 +64,12 @@ def _make_filing(
 
 
 def _as_json_bytes(filing: ScrapedFiling) -> bytes:
-    return json.dumps(dataclasses.asdict(filing)).encode()
+    def _default(obj: object) -> str:
+        if isinstance(obj, date):
+            return obj.isoformat()
+        raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
+
+    return json.dumps(dataclasses.asdict(filing), default=_default).encode()
 
 
 def _no_such_key_error() -> ClientError:
@@ -563,7 +568,9 @@ class TestIterFilingsByFormType:
     def test_is_a_generator(self):
         import inspect
 
-        result = iter_filings_by_form_type("10-K", date(2024, 1, 15), date(2024, 1, 15))
+        result = iter_filings_by_form_type(
+            "10-K", date(2024, 1, 15), date(2024, 1, 15), bucket=BUCKET
+        )
         assert inspect.isgenerator(result)
 
     def test_uses_correct_prefix(self, mocker, bucket_env):
